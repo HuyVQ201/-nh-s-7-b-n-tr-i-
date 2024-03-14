@@ -1,19 +1,23 @@
 import numpy as np
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Dropout
-from tensorflow.keras.models import Model
-from tensorflow.keras.preprocessing import image
+from keras.layers import Input, Conv2D, MaxPooling2D, Dropout
+from keras.preprocessing import image
 import matplotlib.pyplot as plt
 import tensorflow as tf
-
+from keras.models import Model
 
 
 # Đường dẫn đến ảnh
-image_path = "D:/Document/NGHIÊN CỨU KHOA HỌC/Ảnh số 7 bên trái/Ảnh số 7 trái/Ảnh số 7 trái crop.jpg"
+image_path = "D:/Document/NGHIÊN CỨU KHOA HỌC/Ảnh số 7 bên trái/Ảnh số 7 trái/Ảnh-7-trái-2.png"
 
-# Load ảnh và điều chỉnh kích thước
+# Tải hình ảnh từ đường dẫn đã cho và điều chỉnh kích thước của nó thành 128x128 pixel
 img = image.load_img(image_path, target_size=(128, 128))
-img_array = image.img_to_array(img)
+
+# Chuyển đổi hình ảnh thành mảng numpy và mở rộng chiều
+img_array = image.img_to_array(img) 
 img_array = np.expand_dims(img_array, axis=0)
+
+# Chuyển đổi hình ảnh thành tensor
+img_tensor = tf.convert_to_tensor(img_array)
 
 # Tạo input layer
 inputs = tf.keras.layers.Input(shape=(128, 128, 3))
@@ -45,6 +49,9 @@ c5 = tf.keras.layers.Conv2D(256, (3,3), activation = 'relu', kernel_initializer=
 c5 = tf.keras.layers.Dropout(0.3)(c5)
 c5 = tf.keras.layers.Conv2D(256, (3,3), activation = 'relu', kernel_initializer= 'he_normal', padding = 'same')(c5)
 
+
+#Expansttive path
+
 u6 = tf.keras.layers.Conv2DTranspose (128, (3,3), strides = (2,2), padding = 'same')(c5)
 u6 = tf.keras.layers.concatenate([u6, c4])
 c6 = tf.keras.layers.Conv2D(128, (3,3), activation = 'relu', kernel_initializer= 'he_normal', padding = 'same')(u6)
@@ -73,22 +80,45 @@ c9 = tf.keras.layers.Conv2D(16, (3,3), activation = 'relu', kernel_initializer= 
 outputs = tf.keras.layers.Conv2D(1, (1,1), activation = 'sigmoid')(c9)
 model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-
 # Hiển thị cấu trúc mô hình
 model.compile(optimizer = 'adam', loss = 'binary_crossentropy', metrics = ['accuracy'])
 model.summary()
 
-# Hiển thị ảnh gốc
-plt.subplot(1, 2, 1)
-plt.imshow(img_array[0].astype('uint8'))  # Đổi kiểu dữ liệu về uint8 để hiển thị đúng
-plt.title('Original Image')
+# Tạo một danh sách chứa tất cả các lớp Conv2D và MaxPooling2D trong mô hình
+conv_maxpool_layers = [layer for layer in model.layers if isinstance(layer, (Conv2D, MaxPooling2D))]
 
-# Dự đoán với ảnh đầu vào
-output_feature_map = model.predict(img_array)
+# Tạo một mô hình mới với cùng đầu vào như mô hình gốc, nhưng đầu ra là các đầu ra giữa
+feature_map_model = Model(inputs=model.inputs, outputs=[layer.output for layer in conv_maxpool_layers])
 
-# Hiển thị feature map đầu ra của mô hình
-plt.subplot(1, 2, 2)
-plt.imshow(output_feature_map[0, :, :, 0], cmap='viridis')
-plt.title('Output Feature Map')
+# Lấy tất cả các feature map
+feature_maps = feature_map_model.predict(img_tensor)
 
-plt.show()
+
+# Hiển thị tất cả các feature map
+for i, feature_map in enumerate(feature_maps):
+    num_feature_maps = feature_map.shape[-1]
+    
+    # Số hàng và cột cho subplot
+    rows = int(np.sqrt(num_feature_maps))
+    cols = int(np.ceil(num_feature_maps / rows))
+
+    # Hiển thị tất cả các feature map đầu ra của mô hình
+    fig, axes = plt.subplots(rows, cols, figsize=(10, 10))
+    fig.suptitle(f'Feature maps of layer {i+1}')
+
+    # Luôn đảm bảo rằng `axes` là một mảng hai chiều
+    if rows == 1:
+        axes = np.expand_dims(axes, axis=0)
+    if cols == 1:
+        axes = np.expand_dims(axes, axis=1)
+
+    for j in range(min(num_feature_maps, rows * cols)):
+        ax = axes[j // cols, j % cols]
+        ax.imshow(feature_map[0, :, :, j], cmap='viridis')
+        ax.axis('off')
+
+    # Loại bỏ trục thừa
+    for j in range(num_feature_maps, rows * cols):
+        axes.flatten()[j].axis('off')
+
+    plt.show()
