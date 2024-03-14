@@ -1,161 +1,220 @@
-import numpy as np
-from keras.layers import Input, Conv2D, MaxPooling2D, Dropout
-from keras.preprocessing import image
-import matplotlib.pyplot as plt
 import tensorflow as tf
-from keras.models import Model
+import os
+import random
+import numpy as np
+import keras as kr
 
-# Đường dẫn đến ảnh
-image_path = r"C:/Users/Administrator/Pictures/Nền/Quang.jpg"
+from tqdm import tqdm 
 
-# Tải hình ảnh từ đường dẫn đã cho và điều chỉnh kích thước của nó thành 128x128 pixel
-img = image.load_img(image_path, target_size=(128, 128))
+from skimage.io import imread, imshow
+from skimage.transform import resize
+import matplotlib.pyplot as plt
 
-# Chuyển đổi hình ảnh thành mảng numpy và mở rộng chiều
-img_array = image.img_to_array(img)
-img_array = np.expand_dims(img_array, axis=0)
+seed = 42
+np.random.seed = seed
 
-# Chuyển đổi hình ảnh thành tensor
-img_tensor = tf.convert_to_tensor(img_array)
+IMG_WIDTH = 128
+IMG_HEIGHT = 128
+IMG_CHANNELS = 3
 
-# Tạo input layer
-inputs = tf.keras.layers.Input(shape=(128, 128, 3))
-s = tf.keras.layers.Lambda(lambda x: x / 255)(inputs)
+TRAIN_PATH = 'D:/Documents/NGHIÊN CỨU KHOA HỌC/Unet_Training-main/Unet_Training-main/train_set'
+TEST_PATH = 'D:/Documents/NGHIÊN CỨU KHOA HỌC/Unet_Training-main/Unet_Training-main/test_set/'
+layer_names = ['conv2d_18']
 
-###################
-layer_names = ['input_layer', 'lambda', 'conv2d', 'dropout', 'conv2d_1', 'max_pooling2d', 'conv2d_2', 'dropout_1', 'conv2d_3', 'max_pooling2d_1', 'conv2d_4', 'dropout_2', 'conv2d_5', 'max_pooling2d_2', 'conv2d_6', 'dropout_3', 'conv2d_7', 'max_pooling2d_3', 'conv2d_8', 'dropout_4', 'conv2d_9', 'conv2d_transpose', 'concatenate', 'conv2d_10', 'dropout_5', 'conv2d_11', 'conv2d_transpose_1', 'concatenate_1', 'conv2d_12', 'dropout_6', 'conv2d_13', 'conv2d_transpose_2', 'concatenate_2', 'conv2d_14', 'dropout_7', 'conv2d_15', 'conv2d_transpose_3', 'concatenate_3', 'conv2d_16', 'dropout_8', 'conv2d_17', 'conv2d_18']
+train_ids = next(os.walk(TRAIN_PATH))[1]
+test_ids = next(os.walk(TEST_PATH))[1]
 
-c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(s)
-c1 = tf.keras.layers.Dropout(0.1)(c1)
-c1 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c1)
-p1 = tf.keras.layers.MaxPooling2D((2, 2))(c1)
+X_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), dtype=np.uint8)
+Y_train = np.zeros((len(train_ids), IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool_)
 
-c2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p1)
-c2 = tf.keras.layers.Dropout(0.1)(c2)
-c2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c2)
-p2 = tf.keras.layers.MaxPooling2D((2, 2))(c2)
+print('Resizing training images and masks')
+for n, id_ in tqdm(enumerate(train_ids), total=len(train_ids)):   
+    path = TRAIN_PATH
+    img = imread(path + "/" + id_ + "/images/" + id_ + '.png')[:,:,:IMG_CHANNELS]  
+    img = resize(img, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True)
+    X_train[n] = img  #Fill empty X_train with values from img
+    mask = np.zeros((IMG_HEIGHT, IMG_WIDTH, 1), dtype=np.bool_)
+    
+    # Add images each others
+    for mask_file in next(os.walk(path + "/" + id_ + '/masks/'))[2]:
+        mask_ = imread(path + "/" + id_ + '/masks/' + mask_file)
+        mask_ = np.expand_dims(resize(mask_, (IMG_HEIGHT, IMG_WIDTH), mode='constant',  
+                                      preserve_range=True), axis=-1)
+        mask = np.maximum(mask, mask_)  
+            
+    Y_train[n] = mask   
 
-c3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p2)
-c3 = tf.keras.layers.Dropout(0.2)(c3)
-c3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c3)
-p3 = tf.keras.layers.MaxPooling2D(2, 2)(c3)
+# test images
+X_test = np.zeros((len(test_ids), IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS), dtype=np.uint8)
+sizes_test = []
+print('Resizing test images') 
+for n, id_ in tqdm(enumerate(test_ids), total=len(test_ids)):
+    path = TEST_PATH
+    img = imread(path + '/' + id_ + '.png')[:,:,:IMG_CHANNELS]
+    sizes_test.append([img.shape[0], img.shape[1]])
+    img = resize(img, (IMG_HEIGHT, IMG_WIDTH), mode='constant', preserve_range=True)
+    X_test[n] = img
 
-c4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p3)
-c4 = tf.keras.layers.Dropout(0.2)(c4)
-c4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c4)
-p4 = tf.keras.layers.MaxPooling2D(2, 2)(c4)
+print('Done!')
 
-c5 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p4)
-c5 = tf.keras.layers.Dropout(0.3)(c5)
-c5 = tf.keras.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c5)
+# Check the data all right
+# image_x = random.randint(0, len(train_ids))
+# imshow(X_train[image_x])
+# plt.show()
+# imshow(np.squeeze(Y_train[image_x]))
+# plt.show()
 
-# Expansttive path
 
-u6 = tf.keras.layers.Conv2DTranspose(128, (3, 3), strides=(2, 2), padding='same')(c5)
-u6 = tf.keras.layers.concatenate([u6, c4])
-c6 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u6)
-c6 = tf.keras.layers.Dropout(0.2)(c6)
-c6 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c6)
+print("Shape of X_test:", X_test.shape)
+# Print the shape of a sample training image (assuming you have access to one)
 
-u7 = tf.keras.layers.Conv2DTranspose(64, (3, 3), strides=(2, 2), padding='same')(c6)
-u7 = tf.keras.layers.concatenate([u7, c3])
-c7 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u7)
-c7 = tf.keras.layers.Dropout(0.2)(c7)
-c7 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c7)
 
-u8 = tf.keras.layers.Conv2DTranspose(32, (3, 3), strides=(2, 2), padding='same')(c7)
-u8 = tf.keras.layers.concatenate([u8, c2])
-c8 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u8)
-c8 = tf.keras.layers.Dropout(0.1)(c8)
-c8 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c8)
+#Build the model
+inputs = kr.layers.Input((IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS))
+s = kr.layers.Lambda(lambda x: x / 255)(inputs) # Convert uint8 to float
 
-u9 = tf.keras.layers.Conv2DTranspose(16, (3, 3), strides=(2, 2), padding='same')(c8)
-u9 = tf.keras.layers.concatenate([u9, c1], axis=3)
-c9 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u9)
-c9 = tf.keras.layers.Dropout(0.1)(c9)
-c9 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c9)
+#Contraction path
+c1 = kr.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(s)
+c1 = kr.layers.Dropout(0.1)(c1)
+c1 = kr.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c1)
+p1 = kr.layers.MaxPooling2D((2, 2))(c1)
 
-# Tạo mô hình
-outputs = tf.keras.layers.Conv2D(1, (1, 1), activation='sigmoid')(c9)
-model = tf.keras.Model(inputs=inputs, outputs=outputs)
+c2 = kr.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p1)
+c2 = kr.layers.Dropout(0.1)(c2)
+c2 = kr.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c2)
+p2 = kr.layers.MaxPooling2D((2, 2))(c2)
+ 
+c3 = kr.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p2)
+c3 = kr.layers.Dropout(0.2)(c3)
+c3 = kr.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c3)
+p3 = kr.layers.MaxPooling2D((2, 2))(c3)
+ 
+c4 = kr.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p3)
+c4 = kr.layers.Dropout(0.2)(c4)
+c4 = kr.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c4)
+p4 = kr.layers.MaxPooling2D(pool_size=(2, 2))(c4)
+ 
+c5 = kr.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(p4)
+c5 = kr.layers.Dropout(0.3)(c5)
+c5 = kr.layers.Conv2D(256, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c5)
 
-# Hiển thị cấu trúc mô hình
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+#Expansive path 
+u6 = kr.layers.Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same')(c5)
+u6 = kr.layers.concatenate([u6, c4])
+c6 = kr.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u6)
+c6 = kr.layers.Dropout(0.2)(c6)
+c6 = kr.layers.Conv2D(128, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c6)
+ 
+u7 = kr.layers.Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same')(c6)
+u7 = kr.layers.concatenate([u7, c3])
+c7 = kr.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u7)
+c7 = kr.layers.Dropout(0.2)(c7)
+c7 = kr.layers.Conv2D(64, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c7)
+ 
+u8 = kr.layers.Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(c7)
+u8 = kr.layers.concatenate([u8, c2])
+c8 = kr.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u8)
+c8 = kr.layers.Dropout(0.1)(c8)
+c8 = kr.layers.Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c8)
+ 
+u9 = kr.layers.Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same')(c8)
+u9 = kr.layers.concatenate([u9, c1], axis=3)
+c9 = kr.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(u9)
+c9 = kr.layers.Dropout(0.1)(c9)
+c9 = kr.layers.Conv2D(16, (3, 3), activation='relu', kernel_initializer='he_normal', padding='same')(c9)
+ 
+outputs = kr.layers.Conv2D(1, (1, 1), activation='sigmoid')(c9)
+ 
+model = kr.Model(inputs=[inputs], outputs=[outputs])
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'], run_eagerly=True)
 model.summary()
 
-# Tạo một danh sách chứa tất cả các lớp Conv2D và MaxPooling2D trong mô hình
-conv_maxpool_layers = [layer for layer in model.layers if isinstance(layer, (Conv2D, MaxPooling2D))]
+################################
+# Modelcheckpoint (Save model after every epoch)
+# Save the best only
+checkpointer = kr.callbacks.ModelCheckpoint('model_for_nuclei.keras', verbose=1, save_best_only=True)
 
-# Tạo một mô hình mới với cùng đầu vào như mô hình gốc, nhưng đầu ra là các đầu ra giữa
-feature_map_model = Model(inputs=model.inputs, outputs=[layer.output for layer in conv_maxpool_layers])
+# To make sure the stop point is the best point
+callbacks = [
+        kr.callbacks.EarlyStopping(patience=30, monitor='val_loss'),
+        kr.callbacks.TensorBoard(log_dir='logs')]
 
-# Lấy tất cả các feature map
-feature_maps = feature_map_model.predict(img_tensor)
+results = model.fit(X_train, Y_train, validation_split=0.1, batch_size=16, epochs=30, callbacks=callbacks)
+
+####################################
+
+# Predict in random image
+#idx = random.randint(0, len(X_train))
+idx = 0
+
+preds_train = model.predict(X_train[:int(X_train.shape[0]*0.9)], verbose=1)
+preds_val = model.predict(X_train[int(X_train.shape[0]*0.9):], verbose=1)
+#preds_test = model.predict(X_test, verbose=1)
+
+ 
+preds_train_t = (preds_train > 0.5).astype(np.uint8)
+preds_val_t = (preds_val > 0.5).astype(np.uint8)
+#preds_test_t = (preds_test > 0.5).astype(np.uint8)
 
 
-import matplotlib.pyplot as plt
-import numpy as np
+# Perform a sanity check on some random training samples
+#ix = random.randint(0, len(preds_train_t))
+ix = 0
+imshow(X_train[ix])
+plt.show()
+imshow(np.squeeze(Y_train[ix]))
+plt.show()
+imshow(np.squeeze(preds_train_t[ix]))
+plt.show()
 
-for i, feature_map in enumerate(feature_maps):
-    num_feature_maps = feature_map.shape[-1]
+# Perform a sanity check on some random validation samples
+#ix = random.randint(0, len(preds_val_t))
+ix = 0
+imshow(X_train[int(X_train.shape[0]*0.9):][ix])
+plt.show()
+imshow(np.squeeze(Y_train[int(Y_train.shape[0]*0.9):][ix]))
+plt.show()
+imshow(np.squeeze(preds_val_t[ix]))
+plt.show()
+
+#for i, layer in enumerate(model.layers):
+    #if hasattr(layer, 'kernel'):
+        #weights, biases = layer.get_weights()
+        #print(f"Convolutional Layer {i+1}:")
+        #print(f"Weights shape: {weights.shape}")
+        #num_kernels = weights.shape[-1]
+
+        # Số hàng và cột cho subplot
+        #rows = int(np.sqrt(num_kernels))
+        #cols = int(np.ceil(num_kernels / rows))
+
+        #for j in range(num_kernels):
+         #   for k in range(weights.shape[-1]):  # Thêm vòng lặp này để duyệt qua các kênh của ảnh
+          #      filter_img = np.mean(weights[:, :, :, j], axis=1)  # Chuyển thành ảnh xám bằng cách lấy giá trị trung bình của các kênh
+           #     plt.subplot(rows, cols, j + 1)
+            #plt.imshow(filter_img, cmap='gray')
+            #plt.axis('off')
+            #print(layer.kernel.numpy())
+    #else:
+        #print(f'Layer {i+1} is an InputLayer and does not have weights.')}
+
+layer = model.get_layer(layer_names[0])
+if hasattr(layer, 'kernel'):
+    weights, biases = layer.get_weights()
+    print(f"Convolutional Layer:")
+    print(f"Weights shape: {weights.shape}")
+    num_kernels = weights.shape[-1]
 
     # Số hàng và cột cho subplot
-    rows = int(np.sqrt(num_feature_maps))
-    cols = int(np.ceil(num_feature_maps / rows))
+    rows = int(np.ceil(np.sqrt(num_kernels)))
+    cols = int(np.ceil(num_kernels / rows))
 
-    # Hiển thị tất cả các feature map đầu ra của mô hình
-    fig, axes = plt.subplots(rows, cols, figsize=(10, 10))
-    fig.suptitle(f'Feature maps of layer {i + 1}')
-    
-    sess = tf.compat.v1.Session()
-    layer = model.get_layer(layer_names[i])
-    # Check the shape of the feature_map tensor
-    print(f'Shape of feature_map tensor for layer {i + 1}: {feature_map.shape}')
+    for j in range(num_kernels):
+        filter_img = np.mean(weights[:, :, :, j],axis = 1)
+        plt.subplot(rows, cols, j + 1)
+        plt.imshow(filter_img, cmap='gray')
+        plt.axis('off')
+else:
+    print(f'Layer is an InputLayer and does not have weights.')
 
-    # Luôn đảm bảo rằng `axes` là một mảng hai chiều
-    if rows == 1:
-        axes = np.expand_dims(axes, axis=0)
-    if cols == 1:
-        axes = np.expand_dims(axes, axis=1)
-
-    for j in range(min(num_feature_maps, rows * cols)):
-        ax = axes[j // cols, j % cols]
-        ax.imshow(feature_map[0, :, :, j], cmap='viridis')
-        ax.axis('off')
-
-    # Loại bỏ trục thừa
-    for j in range(num_feature_maps, rows * cols):
-        if rows * cols < num_feature_maps:
-            axes[j % num_filters].axis('off')
-        else:
-            axes[j // cols, j % cols].axis('off')
-
-    plt.show()
-
-
-rows = 4
-cols = 4
-
-for i, layer in enumerate(model.layers):
-    # Hiển thị tất cả các filter
-    if hasattr(layer, 'kernel'):
-        kernel = layer.kernel.numpy()
-        num_filters = kernel.shape[3]
-        fig, axes = plt.subplots(num_filters, 1, figsize=(5, 5 * num_filters))
-        fig.suptitle(f'Filters for Layer {i + 1}')
-
-        for j in range(num_filters):
-            filter = kernel[:, :, :, j]
-            filter_np = np.squeeze(filter)
-            if filter_np.shape[-1] == 3:
-                filter_np = np.transpose(filter_np, (1, 0, 2))
-            if rows * cols < num_filters:
-                ax = axes[j % num_filters]
-            else:
-                ax = axes[j // cols, j % cols]
-            ax.imshow(filter_np, cmap='gray')
-            ax.axis('off')
-
-        plt.show()
-    else:
-        print(f'Layer {i + 1} is an InputLayer and does not have weights.')
+plt.show()
